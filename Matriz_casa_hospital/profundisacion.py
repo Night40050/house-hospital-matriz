@@ -1,8 +1,9 @@
 import random
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
-import time
+import os
+
 
 class Coordinate:
     """Clase para manejar coordenadas en la matriz"""
@@ -50,7 +51,7 @@ class HospitalDistribution:
             if self.grid[x][y] == 0:  # Si la posición está vacía
                 self.houses.add(new_pos)
                 self.grid[x][y] = 1  # 1 representa casa
-    
+
     def _is_valid_hospital_position(self, pos):
         """Verifica si una posición es válida para un nuevo hospital"""
         if self.grid[pos.x][pos.y] != 0:
@@ -128,9 +129,19 @@ class GUI:
         self.master = master
         master.title("Distribución de Hospitales")
         
+        # Obtener el directorio actual donde está el script
+        self.current_dir = os.path.dirname(os.path.abspath(__file__))
+        
         # Frame de configuración
         self.config_frame = ttk.Frame(master)
         self.config_frame.pack(pady=10)
+        
+        # Inicializar imágenes como None
+        self.house_image = None
+        self.hospital_image = None
+        
+        # Cargar imágenes
+        self.load_images()
         
         # Inputs
         ttk.Label(self.config_frame, text="Filas:").grid(row=0, column=0)
@@ -153,49 +164,109 @@ class GUI:
         ttk.Button(self.config_frame, text="Iniciar", command=self.start_simulation).grid(row=2, column=0, columnspan=4)
         
         # Canvas para la matriz
-        self.canvas = tk.Canvas(master, width=500, height=500)
+        self.canvas = tk.Canvas(master, width=500, height=500, bg='white')
         self.canvas.pack(pady=10)
-        
+
+    def load_images(self):
+        """Carga y redimensiona las imágenes necesarias"""
+        try:
+            # Definir rutas de las imágenes
+            house_path = os.path.join(self.current_dir, 'images', 'house.png')
+            hospital_path = os.path.join(self.current_dir, 'images', 'hospital.png')
+            
+            # Asegurar que la carpeta images exista
+            if not os.path.exists(os.path.join(self.current_dir, 'images')):
+                os.makedirs(os.path.join(self.current_dir, 'images'))
+                print("Carpeta 'images' creada. Coloca las imágenes allí.")
+                return
+            
+            # Cargar icono de casa
+            if os.path.exists(house_path):
+                house_image = Image.open(house_path)
+                self.house_image = ImageTk.PhotoImage(house_image.resize((40, 40)))
+            else:
+                print(f"No se encontró la imagen: {house_path}. Usando respaldo.")
+                
+            # Cargar icono de hospital
+            if os.path.exists(hospital_path):
+                hospital_image = Image.open(hospital_path)
+                self.hospital_image = ImageTk.PhotoImage(hospital_image.resize((40, 40)))
+            else:
+                print(f"No se encontró la imagen: {hospital_path}. Usando respaldo.")
+
+        except Exception as e:
+            print(f"Error cargando imágenes: {str(e)}")
+            self.house_image = None
+            self.hospital_image = None
+
     def start_simulation(self):
         """Inicia la simulación con los parámetros ingresados"""
-        rows = int(self.rows_var.get())
-        cols = int(self.cols_var.get())
-        num_hospitals = int(self.hospitals_var.get())
-        num_houses = int(self.houses_var.get())
-        
-        self.distribution = HospitalDistribution(rows, cols, num_hospitals, num_houses)
-        self.distribution.initialize_random_positions()
-        self.draw_grid()
-        
-        # Optimizar y actualizar visualización
-        self.master.after(100, self.optimize_step)
+        try:
+            rows = int(self.rows_var.get())
+            cols = int(self.cols_var.get())
+            num_hospitals = int(self.hospitals_var.get())
+            num_houses = int(self.houses_var.get())
+            
+            if num_hospitals <= 0 or num_houses <= 0:
+                messagebox.showerror("Error", "Números deben ser mayores a 0")
+                return
+            
+            self.distribution = HospitalDistribution(rows, cols, num_hospitals, num_houses)
+            self.distribution.initialize_random_positions()
+            self.draw_grid()
+            
+            # Optimizar y actualizar visualización
+            self.master.after(100, self.optimize_step)
+        except ValueError as e:
+            messagebox.showerror("Error", "Por favor ingresa valores numéricos válidos")
     
     def optimize_step(self):
         """Ejecuta un paso de optimización y actualiza la visualización"""
         self.distribution.optimize_distribution()
         self.draw_grid()
-        
+    
     def draw_grid(self):
         """Dibuja la matriz en el canvas"""
         self.canvas.delete("all")
+        
         cell_width = 500 // self.distribution.cols
         cell_height = 500 // self.distribution.rows
         
+        # Asegurar tamaño mínimo de celdas
+        cell_width = max(1, cell_width)
+        cell_height = max(1, cell_height)
+        
+        # Dibujar cuadrícula
+        for i in range(self.distribution.rows + 1):
+            y = i * cell_height
+            self.canvas.create_line(0, y, 500, y, fill="gray")
+        for j in range(self.distribution.cols + 1):
+            x = j * cell_width
+            self.canvas.create_line(x, 0, x, 500, fill="gray")
+        
+        # Dibujar casas y hospitales
         for i in range(self.distribution.rows):
             for j in range(self.distribution.cols):
-                x1 = j * cell_width
-                y1 = i * cell_height
-                x2 = x1 + cell_width
-                y2 = y1 + cell_height
+                x_center = j * cell_width + cell_width//2
+                y_center = i * cell_height + cell_height//2
                 
-                # Dibujar celda
-                self.canvas.create_rectangle(x1, y1, x2, y2, outline="gray")
-                
-                # Dibujar contenido
                 if self.distribution.grid[i][j] == 1:  # Casa
-                    self.canvas.create_rectangle(x1+5, y1+5, x2-5, y2-5, fill="green")
+                    if self.house_image:
+                        self.canvas.create_image(x_center, y_center, image=self.house_image, anchor="center")
+                    else:
+                        self.canvas.create_rectangle(
+                            x_center - 15, y_center - 15,
+                            x_center + 15, y_center + 15,
+                            fill="green", outline="")
+                        
                 elif self.distribution.grid[i][j] == 2:  # Hospital
-                    self.canvas.create_oval(x1+5, y1+5, x2-5, y2-5, fill="red")
+                    if self.hospital_image:
+                        self.canvas.create_image(x_center, y_center, image=self.hospital_image, anchor="center")
+                    else:
+                        self.canvas.create_oval(
+                            x_center - 15, y_center - 15,
+                            x_center + 15, y_center + 15,
+                            fill="red", outline="")
 
 def main():
     root = tk.Tk()
